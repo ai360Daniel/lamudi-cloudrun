@@ -447,8 +447,9 @@ async def endpoint_obtener_listados(
 
 @app.post("/scrape-listados")
 async def endpoint_scrape_listados(
-    cp: str,
-    tipo_propiedad: str,
+    urls: Optional[List[str]] = None,
+    cp: Optional[str] = None,
+    tipo_propiedad: Optional[str] = None,
     precio: Optional[float] = None,
     max_listados: int = 6,
     mode: str = "parallel"
@@ -456,73 +457,93 @@ async def endpoint_scrape_listados(
     """
     Scrapea propiedades desde Lamudi
     
-    **Parámetros:**
+    **Opción 1: Proporcionar lista de URLs directamente**
+    - `urls`: Lista de URLs de propiedades (ej: ["https://...", "https://..."])
+    
+    **Opción 2: Buscar propiedades primero**
     - `cp`: Código postal (ej: "03100")
     - `tipo_propiedad`: Tipo de propiedad (ej: "departamento", "casa", "terreno")
     - `precio`: Precio opcional para filtrar (ej: 6000000)
-    - `max_listados`: Número máximo de propiedades a scrapear (default: 6)
+    - `max_listados`: Número máximo de propiedades (default: 6)
+    
     - `mode`: "parallel" (rápido) o "sequential" (estable), default: parallel
     
     **Retorna:** Lista de diccionarios con datos de propiedades
     """
+    # ===== DEFERRED IMPORTS =====
+    import requests
+    from bs4 import BeautifulSoup
+    
     try:
-        # Paso 1: Obtener listados
-        logger.info(f"Obteniendo listados para CP={cp}, tipo={tipo_propiedad}, precio={precio}")
-        
-        start_url = construir_url_cp(cp, tipo_propiedad, precio)
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/138.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "es-MX,es;q=0.9,en;q=0.8",
-        }
-
         enlaces = []
-        visitados = set()
-        url = start_url
-        pagina = 1
+        
+        # Si se proporcionan URLs directamente, usarlas
+        if urls and len(urls) > 0:
+            logger.info(f"Usando {len(urls)} URLs proporcionadas directamente")
+            enlaces = urls[:max_listados]
+        else:
+            # Si no, obtener URLs buscando en Lamudi
+            if not cp or not tipo_propiedad:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Debe proporcionar 'urls' O ('cp' y 'tipo_propiedad')"
+                )
+            
+            logger.info(f"Obteniendo listados para CP={cp}, tipo={tipo_propiedad}, precio={precio}")
+            
+            start_url = construir_url_cp(cp, tipo_propiedad, precio)
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/138.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "es-MX,es;q=0.9,en;q=0.8",
+            }
 
-        while url and len(enlaces) < max_listados:
-            logger.info(f"Página {pagina}")
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
+            visitados = set()
+            url = start_url
+            pagina = 1
 
-            for a in soup.select(".snippet__content a[href]"):
-                href = a.get("href")
-                if href:
-                    href = urljoin(url, href)
-                    if href not in visitados:
-                        visitados.add(href)
-                        enlaces.append(href)
-                        if len(enlaces) >= max_listados:
-                            break
+            while url and len(enlaces) < max_listados:
+                logger.info(f"Página {pagina}")
+                response = requests.get(url, headers=headers, timeout=30)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
 
-            next_button = soup.select_one("#pagination-next")
-            if next_button is None:
-                break
+                for a in soup.select(".snippet__content a[href]"):
+                    href = a.get("href")
+                    if href:
+                        href = urljoin(url, href)
+                        if href not in visitados:
+                            visitados.add(href)
+                            enlaces.append(href)
+                            if len(enlaces) >= max_listados:
+                                break
 
-            href = next_button.get("href")
-            if not href:
-                break
+                next_button = soup.select_one("#pagination-next")
+                if next_button is None:
+                    break
 
-            nueva_url = urljoin(url, href)
-            if nueva_url == url:
-                break
+                href = next_button.get("href")
+                if not href:
+                    break
 
-            url = nueva_url
-            pagina += 1
+                nueva_url = urljoin(url, href)
+                if nueva_url == url:
+                    break
 
-        enlaces = enlaces[:max_listados]
-        logger.info(f"Se encontraron {len(enlaces)} listados para scrapear")
+                url = nueva_url
+                pagina += 1
 
-        if not enlaces:
-            raise HTTPException(status_code=404, detail="No se encontraron listados con los parámetros especificados")
+            enlaces = enlaces[:max_listados]
+            logger.info(f"Se encontraron {len(enlaces)} listados para scrapear")
+
+            if not enlaces:
+                raise HTTPException(status_code=404, detail="No se encontraron listados con los parámetros especificados")
 
         # Paso 2: Scrapear propiedades
-        logger.info(f"Iniciando scraping con modo={mode}")
+        logger.info(f"Iniciando scraping de {len(enlaces)} URLs con modo={mode}")
         
         if mode == "parallel":
             data = scrape_listados_parallel(enlaces, max_workers=3)
