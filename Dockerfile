@@ -35,10 +35,11 @@ EXPOSE 8080
 # Set environment variables
 ENV PORT=8080
 ENV K_SERVICE=lamudi-scraper
+ENV PYTHONUNBUFFERED=1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8080/health')" || exit 1
+# Health check - simple HTTP check without Python
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=2 \
+    CMD wget -q -O- http://localhost:8080/health || exit 1
 
 # Run the application
 CMD ["python", "-u", "main.py"]
