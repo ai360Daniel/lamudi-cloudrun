@@ -55,7 +55,6 @@ jobs:
             --memory=2Gi
             --timeout=600s
             --max-instances=10
-            --startup-cpu-throttle
 
       - name: Show output
         run: echo ${{ steps.deploy.outputs.url }}
