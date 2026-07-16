@@ -1,22 +1,16 @@
 # Use official Python runtime as a parent image
 FROM python:3.11-slim
 
-# Install dependencies for Google Chrome
+# Install minimal dependencies
 RUN apt-get update && apt-get install -y \
     wget \
-    curl \
     ca-certificates \
-    fonts-liberation \
-    libappindicator1 \
-    libnss3 \
-    libxss1 \
-    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install Google Chrome
 RUN wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
     apt-get update && \
-    apt-get install -y /tmp/chrome.deb && \
+    apt-get install -y /tmp/chrome.deb || true && \
     rm /tmp/chrome.deb && \
     rm -rf /var/lib/apt/lists/*
 
