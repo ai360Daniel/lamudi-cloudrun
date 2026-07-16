@@ -186,106 +186,181 @@ def scrape_property_fast(url: str) -> dict:
 
         driver = get_stealth_driver()
 
-        # NAVEGACIÓN RÁPIDA
+        # NAVEGACIÓN
         driver.get(url)
 
         # ESPERA MÍNIMA
         try:
-            WebDriverWait(driver, 5).until(
+            WebDriverWait(driver, 8).until(
                 EC.presence_of_element_located((By.TAG_NAME, "h1"))
             )
         except:
+            logger.warning(f"⚠️ H1 no encontrado en {url}")
             pass
 
-        # SCROLL MÍNIMO
-        driver.execute_script("window.scrollTo(0, 300);")
-        time.sleep(0.5)
+        # SCROLL para cargar contenido
+        driver.execute_script("window.scrollTo(0, 500);")
+        time.sleep(0.8)
 
         # VERIFICAR BLOQUEO RÁPIDO
         body_text = driver.find_element(By.TAG_NAME, "body").text
         if "403" in body_text or "404" in body_text or "ERROR" in body_text:
-            logger.error(f"❌ Página bloqueada: {url}")
+            logger.error(f"❌ Página bloqueada (403/404/ERROR): {url}")
             data['error'] = True
             return data
 
-        # SELECTORES MÚLTIPLES (optimizados)
-        selectores = {
-            'titulo': [
-                (By.TAG_NAME, "h1"),
-                (By.CSS_SELECTOR, ".property-title")
-            ],
-            'direccion': [
-                (By.CSS_SELECTOR, "div.location-map__location-address-map"),
-                (By.CSS_SELECTOR, ".address")
-            ],
-            'tipo': [
-                (By.CSS_SELECTOR, ".property-type span.place-features__values"),
-                (By.CSS_SELECTOR, ".property-type")
-            ],
-            'precio': [
-                (By.CSS_SELECTOR, "div.prices-and-fees__price"),
-                (By.CSS_SELECTOR, ".price")
-            ],
-            'superficie': [
-                (By.CSS_SELECTOR, "div.details-item-value[data-test='area-value']"),
-                (By.CSS_SELECTOR, ".area")
-            ],
-            'habitaciones': [
-                (By.CSS_SELECTOR, "div.details-item-value[data-test='bedrooms-value']"),
-                (By.CSS_SELECTOR, ".bedrooms")
-            ],
-            'banios': [
-                (By.CSS_SELECTOR, "div.details-item-value[data-test='full-bathrooms-value']"),
-                (By.CSS_SELECTOR, ".bathrooms")
-            ],
-            'descripcion': [
-                (By.CSS_SELECTOR, "div#description-text"),
-                (By.CSS_SELECTOR, ".description")
-            ],
-            'fecha_publicacion': [
-                (By.CSS_SELECTOR, "div.date"),
-                (By.CSS_SELECTOR, ".publish-date")
-            ]
-        }
-
-        # Extraer datos
-        for key, selectors_list in selectores.items():
-            for by, selector in selectors_list:
+        # ===== SELECTORES MEJORADOS Y MÚLTIPLES =====
+        
+        # TÍTULO - múltiples variantes
+        try:
+            # Intenta varios selectores en orden de preferencia
+            titulo_elem = None
+            for selector in [
+                (By.XPATH, "//h1"),
+                (By.CSS_SELECTOR, "h1"),
+                (By.CSS_SELECTOR, "[class*='title']"),
+                (By.CSS_SELECTOR, "[class*='Title']"),
+            ]:
                 try:
-                    elemento = driver.find_element(by, selector)
-                    if elemento:
-                        data[key] = elemento.text.strip()
+                    titulo_elem = driver.find_element(*selector)
+                    if titulo_elem and titulo_elem.text.strip():
+                        data['titulo'] = titulo_elem.text.strip()
                         break
                 except:
                     continue
+            if data['titulo']:
+                logger.info(f"✅ Título: {data['titulo'][:50]}")
+        except Exception as e:
+            logger.debug(f"Error extrayendo título: {e}")
 
-        # COORDENADAS
+        # PRECIO
+        try:
+            precio_elem = None
+            for selector in [
+                (By.XPATH, "//span[contains(text(), '$') or contains(text(), 'MXN')]"),
+                (By.CSS_SELECTOR, "[class*='price']"),
+                (By.CSS_SELECTOR, "[class*='Price']"),
+            ]:
+                try:
+                    precio_elem = driver.find_element(*selector)
+                    if precio_elem and precio_elem.text.strip():
+                        data['precio'] = precio_elem.text.strip()
+                        break
+                except:
+                    continue
+            if data['precio']:
+                logger.info(f"✅ Precio: {data['precio']}")
+        except Exception as e:
+            logger.debug(f"Error extrayendo precio: {e}")
+
+        # DIRECCIÓN
+        try:
+            for selector in [
+                (By.XPATH, "//span[@class and contains(@class, 'address')]"),
+                (By.CSS_SELECTOR, "[class*='address']"),
+                (By.CSS_SELECTOR, "[class*='Address']"),
+            ]:
+                try:
+                    dir_elem = driver.find_element(*selector)
+                    if dir_elem and dir_elem.text.strip():
+                        data['direccion'] = dir_elem.text.strip()
+                        break
+                except:
+                    continue
+        except Exception as e:
+            logger.debug(f"Error extrayendo dirección: {e}")
+
+        # CARACTERÍSTICAS (Habitaciones, Baños, Superficie)
+        try:
+            for item in driver.find_elements(By.XPATH, "//div[contains(@class, 'detail') or contains(@class, 'feature')]"):
+                text = item.text.strip().lower()
+                
+                if 'habitación' in text or 'bedroom' in text or 'recamara' in text:
+                    data['habitaciones'] = item.text.strip()
+                elif 'baño' in text or 'bathroom' in text:
+                    data['banios'] = item.text.strip()
+                elif 'm²' in text or 'superficie' in text or 'area' in text:
+                    data['superficie'] = item.text.strip()
+                elif 'tipo' in text or 'property' in text:
+                    data['tipo'] = item.text.strip()
+        except Exception as e:
+            logger.debug(f"Error extrayendo características: {e}")
+
+        # DESCRIPCIÓN
+        try:
+            for selector in [
+                (By.XPATH, "//div[contains(@class, 'description')]"),
+                (By.CSS_SELECTOR, "[class*='description']"),
+                (By.CSS_SELECTOR, "[class*='Description']"),
+                (By.XPATH, "//div[@id='description']"),
+            ]:
+                try:
+                    desc_elem = driver.find_element(*selector)
+                    if desc_elem and desc_elem.text.strip():
+                        data['descripcion'] = desc_elem.text.strip()[:500]  # Limitar a 500 chars
+                        break
+                except:
+                    continue
+        except Exception as e:
+            logger.debug(f"Error extrayendo descripción: {e}")
+
+        # COORDENADAS - Buscar en scripts JSON
         try:
             scripts = driver.find_elements(By.TAG_NAME, "script")
-            for script in scripts[:5]:
-                txt = script.get_attribute("innerHTML")
-                if txt and ("var pageData" in txt or "latitude" in txt):
-                    data['script_content'] = txt
-                    lat_match = re.search(r'latitude:\s*"?([-\d.]+)"?', txt)
-                    lon_match = re.search(r'longitude:\s*"?([-\d.]+)"?', txt)
-                    if lat_match:
-                        data['lat'] = float(lat_match.group(1))
-                    if lon_match:
-                        data['lon'] = float(lon_match.group(1))
-                    break
-        except:
-            pass
+            logger.debug(f"Buscando coordenadas en {len(scripts)} scripts")
+            
+            for script in scripts[:20]:  # Aumentar búsqueda a 20 scripts
+                txt = script.get_attribute("innerHTML") or ""
+                
+                # Buscar patterns de lat/lon
+                if "latitude" in txt or "longitude" in txt or "latlng" in txt.lower():
+                    data['script_content'] = txt[:500]  # Guardar solo primeros 500 chars
+                    
+                    # Múltiples patterns
+                    patterns = [
+                        (r'latitude["\']?\s*:\s*["\']?([-\d.]+)["\']?', 'lat'),
+                        (r'longitude["\']?\s*:\s*["\']?([-\d.]+)["\']?', 'lon'),
+                        (r'"lat["\']?\s*:\s*["\']?([-\d.]+)["\']?', 'lat'),
+                        (r'"lon["\']?\s*:\s*["\']?([-\d.]+)["\']?', 'lon'),
+                    ]
+                    
+                    for pattern, key in patterns:
+                        match = re.search(pattern, txt)
+                        if match:
+                            try:
+                                value = float(match.group(1))
+                                if key == 'lat':
+                                    data['lat'] = value
+                                else:
+                                    data['lon'] = value
+                                logger.info(f"✅ Encontrado {key}: {value}")
+                            except:
+                                pass
+                    
+                    if data['lat'] or data['lon']:
+                        break
+        except Exception as e:
+            logger.debug(f"Error extrayendo coordenadas: {e}")
 
         elapsed = time.time() - start_time
-        logger.info(f"✅ Completado en {elapsed:.1f}s: {data['titulo'][:30] if data['titulo'] else 'Sin título'}")
+        
+        # Log resumen
+        titulo_preview = (data['titulo'][:30] if data['titulo'] else 'Sin título')
+        precio_preview = (data['precio'][:20] if data['precio'] else 'Sin precio')
+        logger.info(f"✅ Completado en {elapsed:.1f}s | {titulo_preview} | {precio_preview}")
 
     except Exception as e:
-        logger.error(f"❌ Error en {url}: {str(e)}")
+        logger.error(f"❌ Error crítico en {url}: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         data['error'] = True
 
     finally:
         if driver:
-            driver.quit()
+            try:
+                driver.quit()
+            except:
+                pass
 
     return data
 
@@ -446,122 +521,30 @@ async def endpoint_obtener_listados(
 
 
 @app.post("/scrape-listados")
-async def endpoint_scrape_listados(
-    urls: Optional[List[str]] = None,
-    cp: Optional[str] = None,
-    tipo_propiedad: Optional[str] = None,
-    precio: Optional[float] = None,
-    max_listados: int = 6,
-    mode: str = "parallel"
-):
+async def endpoint_scrape_listados(urls: List[str]):
     """
-    Scrapea propiedades desde Lamudi
+    Scrapea propiedades desde Lamudi en paralelo
     
-    **Opción 1: Proporcionar lista de URLs directamente**
-    - `urls`: Lista de URLs de propiedades (ej: ["https://...", "https://..."])
-    
-    **Opción 2: Buscar propiedades primero**
-    - `cp`: Código postal (ej: "03100")
-    - `tipo_propiedad`: Tipo de propiedad (ej: "departamento", "casa", "terreno")
-    - `precio`: Precio opcional para filtrar (ej: 6000000)
-    - `max_listados`: Número máximo de propiedades (default: 6)
-    
-    - `mode`: "parallel" (rápido) o "sequential" (estable), default: parallel
+    **Parámetros:**
+    - `urls`: Lista de URLs de propiedades (ej: ["https://www.lamudi.com.mx/detalle/...", "https://www.lamudi.com.mx/detalle/..."])
     
     **Retorna:** Lista de diccionarios con datos de propiedades
     """
-    # ===== DEFERRED IMPORTS =====
-    import requests
-    from bs4 import BeautifulSoup
-    
     try:
-        enlaces = []
+        if not urls or len(urls) == 0:
+            raise HTTPException(status_code=400, detail="Debe proporcionar al menos una URL en 'urls'")
         
-        # Si se proporcionan URLs directamente, usarlas
-        if urls and len(urls) > 0:
-            logger.info(f"Usando {len(urls)} URLs proporcionadas directamente")
-            enlaces = urls[:max_listados]
-        else:
-            # Si no, obtener URLs buscando en Lamudi
-            if not cp or not tipo_propiedad:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="Debe proporcionar 'urls' O ('cp' y 'tipo_propiedad')"
-                )
-            
-            logger.info(f"Obteniendo listados para CP={cp}, tipo={tipo_propiedad}, precio={precio}")
-            
-            start_url = construir_url_cp(cp, tipo_propiedad, precio)
-            headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/138.0.0.0 Safari/537.36"
-                ),
-                "Accept-Language": "es-MX,es;q=0.9,en;q=0.8",
-            }
-
-            visitados = set()
-            url = start_url
-            pagina = 1
-
-            while url and len(enlaces) < max_listados:
-                logger.info(f"Página {pagina}")
-                response = requests.get(url, headers=headers, timeout=30)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.text, "html.parser")
-
-                for a in soup.select(".snippet__content a[href]"):
-                    href = a.get("href")
-                    if href:
-                        href = urljoin(url, href)
-                        if href not in visitados:
-                            visitados.add(href)
-                            enlaces.append(href)
-                            if len(enlaces) >= max_listados:
-                                break
-
-                next_button = soup.select_one("#pagination-next")
-                if next_button is None:
-                    break
-
-                href = next_button.get("href")
-                if not href:
-                    break
-
-                nueva_url = urljoin(url, href)
-                if nueva_url == url:
-                    break
-
-                url = nueva_url
-                pagina += 1
-
-            enlaces = enlaces[:max_listados]
-            logger.info(f"Se encontraron {len(enlaces)} listados para scrapear")
-
-            if not enlaces:
-                raise HTTPException(status_code=404, detail="No se encontraron listados con los parámetros especificados")
-
-        # Paso 2: Scrapear propiedades
-        logger.info(f"Iniciando scraping de {len(enlaces)} URLs con modo={mode}")
+        logger.info(f"Iniciando scraping paralelo de {len(urls)} URLs")
         
-        if mode == "parallel":
-            data = scrape_listados_parallel(enlaces, max_workers=3)
-        else:
-            data = []
-            for i, url_prop in enumerate(enlaces, 1):
-                logger.info(f"[{i}/{len(enlaces)}] Procesando: {url_prop}")
-                if i > 1:
-                    time.sleep(1)
-                data.append(scrape_property_fast(url_prop))
+        data = scrape_listados_parallel(urls, max_workers=3)
 
+        total_exitosas = sum(1 for item in data if not item.get('error', False))
+        logger.info(f"Scraping completado: {total_exitosas}/{len(data)} exitosas")
+        
         return {
             "status": "success",
-            "cp": cp,
-            "tipo_propiedad": tipo_propiedad,
-            "precio": precio,
-            "mode": mode,
             "total_propiedades": len(data),
+            "exitosas": total_exitosas,
             "propiedades": data
         }
 
