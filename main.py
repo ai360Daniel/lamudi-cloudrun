@@ -115,7 +115,8 @@ def get_stealth_driver():
     if is_cloud_run:
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--remote-debugging-port=9222")
-        service = Service('/usr/bin/chromedriver')
+        # webdriver-manager descargará chromedriver automáticamente
+        service = Service(ChromeDriverManager().install())
     else:
         service = Service(ChromeDriverManager().install())
 
