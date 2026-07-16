@@ -37,9 +37,5 @@ ENV PORT=8080
 ENV K_SERVICE=lamudi-scraper
 ENV PYTHONUNBUFFERED=1
 
-# Health check - simple HTTP check without Python
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=2 \
-    CMD wget -q -O- http://localhost:8080/health || exit 1
-
-# Run the application
-CMD ["python", "-u", "main.py"]
+# Run the application directly with uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]

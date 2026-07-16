@@ -12,24 +12,20 @@ import os
 from datetime import datetime
 from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import pandas as pd
 from urllib.parse import urlencode, urljoin
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 import uvicorn
 
-import requests
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from fake_useragent import UserAgent
+# === IMPORTS DEFERRED (lazy) - se cargan solo cuando se necesitan ===
+# import pandas as pd
+# import requests
+# from bs4 import BeautifulSoup
+# from selenium import webdriver
+# from selenium.webdriver.chrome.options import Options
+# from webdriver_manager.chrome import ChromeDriverManager
+# from fake_useragent import UserAgent
 
 
 # ==================== CONFIGURACIÓN ====================
@@ -74,6 +70,16 @@ def get_stealth_driver():
     """
     Configura el driver con técnicas anti-detección optimizado para velocidad
     """
+    # ===== DEFERRED IMPORTS =====
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from webdriver_manager.chrome import ChromeDriverManager
+    from fake_useragent import UserAgent
+    
     chrome_options = Options()
 
     # Detectar si estamos en Cloud Run
@@ -146,6 +152,11 @@ def scrape_property_fast(url: str) -> dict:
     """
     Versión RÁPIDA de scraping para una sola propiedad
     """
+    # ===== DEFERRED IMPORTS =====
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    
     driver = None
     data = {
         'titulo': None,
@@ -349,6 +360,10 @@ async def endpoint_obtener_listados(
     
     **Retorna:** Lista de URLs encontradas
     """
+    # ===== DEFERRED IMPORTS =====
+    import requests
+    from bs4 import BeautifulSoup
+    
     try:
         start_url = construir_url_cp(cp, tipo_propiedad, precio)
         
